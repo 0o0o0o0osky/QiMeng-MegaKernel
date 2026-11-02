@@ -1,0 +1,5 @@
+*.o
+*.d
+*.so
+*.cpython-*.so
+.*_core.so

@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "QiMeng-MegaKernel"
+version = "0.0.1"
+readme = "README.md"
+description = "Generated MegaKernel implementations and evaluation code for QiMeng-MegaKernel."
+requires-python = ">=3.10"
+dependencies = [
+    "torch",
+    "transformers>=4.51.0,<5.0.0",  # Qwen3 requires model_type qwen3 support
+    "accelerate",
+    "numpy",
+    "safetensors",
+    "pillow",
+    "sentencepiece",
+    "einops",
+    "psutil",
+    "pybind11",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pyright",
+    "pytest",
+]
+profiling = [
+    "matplotlib",
+    "tabulate",
+    "tqdm",
+]
+sm-profiling = [
+    "plotly",
+]
+multigpu = [
+    "cuda-python>=12.4",
+    "mpi4py",
+]
+vla = [
+    "h5py",
+]
+api = [
+    "openai",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["qimeng_megakernel*"]
+
+[tool.setuptools.package-data]
+# Registry data is required by the Python runtime. Native CUDA builds still
+# require a source checkout with the ThunderKittens submodule.
+qimeng_megakernel = [
+    "models/LLM/*.json",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "cuda: requires a CUDA-capable device and compiled kernel assets",
+    "gpu: requires a GPU runtime",
+    "slow: long-running GPU tests (run with pytest -m slow)",
+]

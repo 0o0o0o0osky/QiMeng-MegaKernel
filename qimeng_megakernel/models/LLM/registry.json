@@ -1,0 +1,92 @@
+{
+    "families": {
+        "llama": {
+            "models": {
+                "llama-3.2-1b": {
+                    "hf_ids": [
+                        "meta-llama/Llama-3.2-1B-Instruct"
+                    ],
+                    "implementations": {
+                        "ampere": {
+                            "A100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.llama.preprocess"
+                            },
+                            "H100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.llama.llama3_2__1b.H100.preprocess"
+                            }
+                        }
+                    }
+                },
+                "llama-3.2-3b": {
+                    "hf_ids": [
+                        "meta-llama/Llama-3.2-3B-Instruct",
+                        "Llama-3.2-3B"
+                    ],
+                    "implementations": {
+                        "ampere": {
+                            "A100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.llama.preprocess"
+                            },
+                            "H100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.llama.llama3_2__3b.H100.preprocess"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "qwen": {
+            "models": {
+                "qwen2.5-3b": {
+                    "hf_ids": [
+                        "Qwen/Qwen2.5-3B",
+                        "Qwen/Qwen2.5-3B-Instruct"
+                    ],
+                    "implementations": {
+                        "default": {
+                            "A100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.qwen.qwen2_5__3b.A100.preprocess"
+                            },
+                            "H100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.qwen.qwen2_5__3b.H100.preprocess"
+                            }
+                        }
+                    }
+                },
+                "qwen3-0.6b": {
+                    "hf_ids": [
+                        "Qwen/Qwen3-0.6B",
+                        "Qwen/Qwen3-0.6B-Instruct",
+                        "Qwen/Qwen3-0.6B-Base"
+                    ],
+                    "implementations": {
+                        "default": {
+                            "A100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.qwen.qwen3__0_6b.A100.preprocess"
+                            },
+                            "H100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.qwen.qwen3__0_6b.H100.preprocess"
+                            }
+                        }
+                    }
+                },
+                "qwen1.5-moe-a2.7b": {
+                    "hf_ids": [
+                        "Qwen/Qwen1.5-MoE-A2.7B",
+                        "Qwen/Qwen1.5-MoE-A2.7B-Chat"
+                    ],
+                    "implementations": {
+                        "default": {
+                            "A100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.qwen.qwen1_5_moe_a2_7b.A100.preprocess"
+                            },
+                            "H100": {
+                                "preprocess": "qimeng_megakernel.models.LLM.qwen.qwen1_5_moe_a2_7b.H100.preprocess"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

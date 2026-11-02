@@ -1,0 +1,52 @@
+"""Qwen3-0.6B A100 decode_schedule instructions. SplitKV by KV head; per-head QKV granularity."""
+from .instruction_defs import (
+    BARRIER_ROW,
+    RMS_QKVProj_GEMV,
+    RMS_QKVProj_GEMV_RoPE,
+    DecodeAttentionSplitKV,
+    DecodeAttentionReduction,
+    OProj_GEMV_Residual,
+    RMS_UpGateProj_GEMV_SiLU,
+    DownProj_GEMV_Residual,
+    RMS_LMHead_GEMV,
+    RMS_QKV_BLOCK_SIZE,
+    TILE_N_GRANULARITY,
+    SPLIT_K_GRANULARITY,
+    NUM_DOWNPROJ_SPLIT_K,
+    QKV_RAW_READY_SLOT_BASE,
+    QKV_RAW_READY_SLOTS,
+    QKV_RAW_BLOCKS_PER_GROUP,
+    qkv_raw_group_for_block,
+    ATTENTION_PREPARED_SLOT_BASE,
+    ATTENTION_PREPARE_PRODUCER_PARTIAL,
+    UPGATE_BLOCKS_PER_SIGNAL_BUCKET,
+)
+from . import scheduler
+from . import instruction_defs
+from . import python_vm
+
+__all__ = [
+    "BARRIER_ROW",
+    "RMS_QKVProj_GEMV",
+    "RMS_QKVProj_GEMV_RoPE",
+    "DecodeAttentionSplitKV",
+    "DecodeAttentionReduction",
+    "OProj_GEMV_Residual",
+    "RMS_UpGateProj_GEMV_SiLU",
+    "DownProj_GEMV_Residual",
+    "RMS_LMHead_GEMV",
+    "RMS_QKV_BLOCK_SIZE",
+    "TILE_N_GRANULARITY",
+    "SPLIT_K_GRANULARITY",
+    "NUM_DOWNPROJ_SPLIT_K",
+    "QKV_RAW_READY_SLOT_BASE",
+    "QKV_RAW_READY_SLOTS",
+    "QKV_RAW_BLOCKS_PER_GROUP",
+    "qkv_raw_group_for_block",
+    "ATTENTION_PREPARED_SLOT_BASE",
+    "ATTENTION_PREPARE_PRODUCER_PARTIAL",
+    "UPGATE_BLOCKS_PER_SIGNAL_BUCKET",
+    "scheduler",
+    "instruction_defs",
+    "python_vm",
+]

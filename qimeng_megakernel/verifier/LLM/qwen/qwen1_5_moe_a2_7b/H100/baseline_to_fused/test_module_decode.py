@@ -1,0 +1,56 @@
+"""S1 module: baseline and fused full decode step."""
+from __future__ import annotations
+
+import pytest
+import torch
+
+from qimeng_megakernel.models.LLM.qwen.qwen1_5_moe_a2_7b.H100.single_batch.decode_schedule.fused.layer_scheduler import (
+    run_fused_decode_step,
+)
+from qimeng_megakernel.verifier.common.compare import assert_close
+from qimeng_megakernel.verifier.common.stage_config import CosineGate
+from qimeng_megakernel.verifier.LLM.qwen.qwen1_5_moe_a2_7b.H100.baseline_to_fused._baseline_globs import (
+    run_baseline_decode_step,
+)
+from qimeng_megakernel.verifier.LLM.qwen.qwen1_5_moe_a2_7b.H100.real_data_utils import (
+    LOCAL_CHECKPOINT_AVAILABLE,
+    SHORT_PROMPTS,
+    backup_globs,
+    make_globs_from_real_prefill,
+    restore_globs,
+)
+from qimeng_megakernel.verifier.LLM.qwen.qwen1_5_moe_a2_7b.H100.verifier_config import (
+    CONFIG,
+)
+
+pytestmark = pytest.mark.skipif(
+    not LOCAL_CHECKPOINT_AVAILABLE,
+    reason="set QWEN_MOE_A2_7B_MODEL to a local checkpoint directory",
+)
+
+
+@pytest.mark.parametrize("prompt", SHORT_PROMPTS[:1])
+def test_module_decode(prompt: str) -> None:
+    globs, model = make_globs_from_real_prefill(prompt=prompt, return_model=True)
+    source = backup_globs(globs)
+    expected_logits = run_baseline_decode_step(globs, model)
+    expected_hidden = globs.hidden_states.clone()
+    expected_token = int(torch.argmax(expected_logits).item())
+    restore_globs(globs, source)
+    run_fused_decode_step(globs)
+
+    assert int(torch.argmax(globs.logits).item()) == expected_token
+    gate = CONFIG.gate("S1", "module")
+    assert isinstance(gate, CosineGate)
+    assert gate.min_cosine is not None and gate.max_abs is not None
+    assert gate.norm_ratio_min is not None and gate.norm_ratio_max is not None
+    for name, actual, expected in (
+        ("logits", globs.logits, expected_logits),
+        ("hidden_states", globs.hidden_states, expected_hidden),
+    ):
+        assert_close(
+            actual, expected,
+            min_cosine=gate.min_cosine, max_abs_tol=gate.max_abs,
+            norm_ratio_lo=gate.norm_ratio_min, norm_ratio_hi=gate.norm_ratio_max,
+            enforce_norm_ratio=True, name=name,
+        )

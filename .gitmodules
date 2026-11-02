@@ -1,0 +1,6 @@
+[submodule "qimeng_megakernel/third_party/cutlass"]
+	path = qimeng_megakernel/third_party/cutlass
+	url = https://github.com/NVIDIA/cutlass.git
+[submodule "qimeng_megakernel/third_party/ThunderKittens"]
+	path = qimeng_megakernel/third_party/ThunderKittens
+	url = https://github.com/HazyResearch/ThunderKittens.git

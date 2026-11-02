@@ -1,0 +1,8 @@
+#pragma once
+#define H100_SM_COUNT 132
+#define B200_SM_COUNT 148
+#ifdef KITTENS_BLACKWELL
+#define KERNEL_SM_COUNT B200_SM_COUNT
+#else
+#define KERNEL_SM_COUNT H100_SM_COUNT
+#endif

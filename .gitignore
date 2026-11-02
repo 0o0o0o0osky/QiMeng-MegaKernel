@@ -1,0 +1,87 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# CUDA / C++ build artifacts
+*.o
+*.so
+*.d
+*.ptx
+*.cubin
+*.fatbin
+
+# Local test caches, tuning logs, and generated profiling results
+.pytest_cache/
+*.log
+**/profiles/
+**/profile_outputs/
+**/benchmark_results/
+**/PORTING_HANDOFF/
+**/PORTING_LOG.md
+**/PERF_SUMMARY.md
+
+# Local CUDA path override (do not commit; use same path as 3B locally)
+**/Makefile.local
+
+# Local LLM registry: path -> model_key (do not commit)
+qimeng_megakernel/models/LLM/registry.local.json
+
+# Local-only model debug entrypoint (convenience, not for upstream)
+qimeng_megakernel/models/LLM/qwen/qwen2_5__3b/A100/run_mk_decode_hello.py
+
+# Debug / profiling (do not push)
+qimeng_megakernel/models/LLM/qwen/qwen2_5__3b/A100/single_batch/decode_kernel/down_proj_f32_scatter.cu
+qimeng_megakernel/models/LLM/qwen/qwen2_5__3b/A100/single_batch/decode_kernel/down_proj_gemv_f32accum.cu
+qimeng_megakernel/verifier/LLM/qwen/qwen2_5__3b/A100/fused_to_pyvm/test_4b_downproj_f32accum.py
+qimeng_megakernel/verifier/LLM/qwen/qwen2_5__3b/A100/pyvm_to_megakernel/decode_kernel/down_proj_f32_scatter.cu
+qimeng_megakernel/verifier/LLM/qwen/qwen2_5__3b/A100/pyvm_to_megakernel/decode_kernel/down_proj_gemv_f32accum.cu
+qimeng_megakernel/verifier/LLM/qwen/qwen2_5__3b/A100/pyvm_to_megakernel/profile_mk_ops.py
+qimeng_megakernel/verifier/LLM/llama/llama3_2__3b/A100/pyvm_to_megakernel/profile_mk_ops.py
+qimeng_megakernel/verifier/compare_decode_profile.md
+qimeng_megakernel/verifier/decode_per_op_instruction_count.py
+qimeng_megakernel/verifier/LLM/llama/llama3_2__1b/A100/FUSION_ROOFLINE_ANALYSIS.md
+
+/docs/
+
+# Legacy verifier path (renamed to llama3_2__1b); keep local copy out of repo
+qimeng_megakernel/verifier/LLM/llama/llama3_2__1B/
+
+# Local test / debug (Qwen3 verifier; do not track)
+CLAUDE.md
+test_qwen_performance.sh
+qimeng_megakernel/verifier/LLM/qwen/qwen3__0_6b/A100/fused_to_pyvm/run_64token_fused_pyvm.py
+qimeng_megakernel/verifier/LLM/qwen/qwen3__0_6b/A100/fused_to_pyvm/test_hf_fused_baseline.py
+qimeng_megakernel/verifier/LLM/qwen/qwen3__0_6b/A100/pyvm_to_megakernel/CHANGELOG.md
+qimeng_megakernel/verifier/LLM/qwen/qwen3__0_6b/A100/pyvm_to_megakernel/DEBUG_LOG.md
+
+# Maintain logs/ locally for artifacts and driver scripts; do not commit it.
+logs/
+# Repository-root tools/ contains local profiling and benchmark drivers copied
+# from templates; do not commit it.
+/tools/
+# Per-model porting state is working-session material. Keep handoffs, progress
+# logs, benchmark summaries, and profiler output local; durable conclusions
+# belong in production code, tests, or project documentation.
+qimeng_megakernel/models/**/PORTING_HANDOFF/
+qimeng_megakernel/models/**/PORTING_LOG.md
+qimeng_megakernel/models/**/logs/
+# Local profiling / scratch (do not commit)
+/profiling_samples/
+**/.mk_build_mode
+**/host_print_layout
+/tmp/
+**/optimization_runs/
+qimeng_megakernel/verifier/LLM/llama/llama3_2__1b/A100/multi_batch/pyvm_to_megakernel/profiles/
+qimeng_megakernel/verifier/LLM/qwen/qwen1_5_moe_a2_7b/A100/pyvm_to_megakernel/profile_outputs/
+*.nsys-rep
+*.sqlite
+*.ncu-rep
+*.qdrep
+*.npz
+/kernel_0.cu
+/task_graph_0.json
+/branch_files_summary.md
+/fused_kernel_analysis.md

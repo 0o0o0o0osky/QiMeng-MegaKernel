@@ -1,0 +1,235 @@
+#include "instruction_list.cuh"
+#include "utils.cuh"
+
+using namespace kittens;
+using namespace megakernel;
+
+using globals = qwen_2_5_3b_globals;
+
+template <typename Config, typename Globals> struct rms_qkv_rope_append {
+    static constexpr int opcode = OPCODE_RMS_QKV_GEMV_ROPE;
+
+    static constexpr int Q_DIM  = Globals::hidden_dim;
+    static constexpr int KV_DIM = Globals::head_dim * Globals::num_kv_heads;
+    static constexpr int K_BLK_START = (Q_DIM / Globals::matvec_block_size);
+    static constexpr int V_BLK_START = ((Q_DIM + KV_DIM) / Globals::matvec_block_size);
+    static constexpr int QKV_TOTAL_BLKS = (Q_DIM + KV_DIM + KV_DIM) / Globals::matvec_block_size;
+    static constexpr int EXPECTED_ARRIVAL_COUNT = QWEN_3B_DOWNPROJ_BARRIER_COUNT;
+
+    using rope_t = kittens::sv_fl<Globals::head_dim>;
+
+    __device__ static inline uint8_t *get_rope_cos_ptr(megakernel::state<Config> &s) {
+        return (uint8_t *)s.scratch() + Config::SCRATCH_BYTES - 1024;
+    }
+    __device__ static inline uint8_t *get_rope_sin_ptr(megakernel::state<Config> &s) {
+        return (uint8_t *)s.scratch() + Config::SCRATCH_BYTES - 512;
+    }
+    __device__ static inline rope_t &get_rope_cos(megakernel::state<Config> &s) {
+        return *reinterpret_cast<rope_t *>(get_rope_cos_ptr(s));
+    }
+    __device__ static inline rope_t &get_rope_sin(megakernel::state<Config> &s) {
+        return *reinterpret_cast<rope_t *>(get_rope_sin_ptr(s));
+    }
+
+    __device__ static inline uint8_t *get_qkv_bias_first_ptr(megakernel::state<Config> &s) {
+        return (uint8_t *)s.scratch() + Config::SCRATCH_BYTES - 1536;
+    }
+    __device__ static inline uint8_t *get_qkv_bias_second_ptr(megakernel::state<Config> &s) {
+        return (uint8_t *)s.scratch() + Config::SCRATCH_BYTES - 1280;
+    }
+
+    struct parsed_instruction {
+        int layer_idx, start_block_idx, end_block_idx, iters;
+        __device__ inline parsed_instruction(
+            typename Config::instruction_t &instruction) {
+            layer_idx = instruction[1];
+            (void)instruction[2];  // tile_M_idx, not used
+            start_block_idx = instruction[3];  // tile_N_start_idx
+            end_block_idx = instruction[4];     // tile_N_end_idx
+            iters = end_block_idx - start_block_idx;
+        }
+        __device__ inline parsed_instruction(megakernel::state<Config> &s)
+            : parsed_instruction(s.instruction()) {}
+    };
+
+    struct pipeline_specifics {
+
+        static __device__ inline void gmem_wait(const Globals &g,
+                                                megakernel::state<Config> &s) {
+            parsed_instruction inst{s};
+            if (inst.layer_idx > 0) {
+                megakernel::mk_barrier_wait(
+                    (volatile int32_t *)&g.Bar[{inst.layer_idx - 1,
+                                                BARRIER_ROW(
+                                                    OPCODE_DOWN_PROJ_RESIDUAL),
+                                                0}],
+                    EXPECTED_ARRIVAL_COUNT);
+            }
+        }
+
+        static __device__ inline void
+        load_iter(megakernel::state<Config> &s, const globals &g, parsed_instruction &inst,
+                  int iter, int col_idx, kittens::st_bf<16, 512> &weight_chunk,
+                  kittens::semaphore &sem) {
+            auto block_idx = inst.start_block_idx + iter;
+            kittens::tma::load_async<dim::ROW, cache_policy::EVICT_FIRST>(
+                weight_chunk, g.qkv_weights,
+                {inst.layer_idx, block_idx, col_idx}, sem);
+        }
+
+        static __device__ inline void store(megakernel::state<Config> &s, const Globals &g,
+                                            parsed_instruction &inst,
+                                            int output_idx, int output_stage) {
+            int block_idx = inst.start_block_idx + output_idx;
+
+            uint8_t *output_scratch_start =
+                pipeline::get_output_start(s, output_stage);
+
+            kittens::sv_bf<16> &qkv_proj_smem_bf =
+                *reinterpret_cast<kittens::sv_bf<16> *>(output_scratch_start);
+
+            kittens::rv_fl<16> qkv_proj, bias_fl, rope_cos, rope_sin;
+
+            matvec_reduce<Config, kittens::sv_fl<16>, kittens::rv_fl<16>,
+                          pipeline::SCRATCH_BYTES_PER_WARP>(
+                output_scratch_start, qkv_proj);
+
+            megakernel::mk_semaphore_wait(bias_arrived(s), 0);
+            auto &bias_sv = *reinterpret_cast<kittens::sv_bf<16> *>(
+                (output_idx % 2 == 0) ? get_qkv_bias_first_ptr(s) : get_qkv_bias_second_ptr(s));
+            if (kittens::laneid() < 16) {
+                bias_fl[0][0] = __bfloat162float(bias_sv.data[kittens::laneid()]);
+            } else {
+                bias_fl[0][0] = 0.f;
+            }
+            kittens::warp::sync();
+            kittens::warp::add(qkv_proj, qkv_proj, bias_fl);
+            kittens::warp::sync();
+
+            megakernel::mk_semaphore_wait(rope_arrived(s), 0);
+            int head_chunk = block_idx % 8;  // head_dim=128, 8 blocks per head
+
+            kittens::sv_fl<16> &rope_cos_sv = *reinterpret_cast<kittens::sv_fl<16> *>(
+                get_rope_cos_ptr(s) + head_chunk * sizeof(float) * Globals::matvec_block_size);
+            kittens::sv_fl<16> &rope_sin_sv = *reinterpret_cast<kittens::sv_fl<16> *>(
+                get_rope_sin_ptr(s) + head_chunk * sizeof(float) * Globals::matvec_block_size);
+
+            kittens::warp::load(rope_cos, rope_cos_sv);
+            kittens::warp::load(rope_sin, rope_sin_sv);
+
+            if (block_idx < V_BLK_START) {  // only Q & K need RoPE
+
+                int mod = (kittens::laneid() & 0b1) ? -1 : 1;
+                kittens::warp::sync();
+                float pair_val =
+                    __shfl_sync(MASK_ALL, qkv_proj[0][0], kittens::laneid() + mod);
+                if (kittens::laneid() < 16) {
+                    qkv_proj[0][0] =
+                        float(qkv_proj[0][0]) * rope_cos[0][0] +
+                        float(-1 * mod) * float(pair_val) * rope_sin[0][0];
+                }
+            }
+
+            kittens::warp::sync();
+            kittens::warp::store(qkv_proj_smem_bf, qkv_proj);
+            kittens::warp::sync();
+
+            if (kittens::laneid() == 0) {
+                if (block_idx < K_BLK_START) {
+                    kittens::tma::store_async<cache_policy::EVICT_LAST>(
+                        g.q_post_rope, qkv_proj_smem_bf, {0, 0, 0, block_idx});
+                } else if (block_idx < V_BLK_START) {
+                    int base_index = (block_idx - K_BLK_START) * Globals::matvec_block_size;
+                    int head_idx = base_index / Globals::head_dim;
+                    int dim_idx = (base_index % Globals::head_dim) / Globals::matvec_block_size;
+                    kittens::tma::store_async<cache_policy::EVICT_LAST>(
+                        g.k_cache, qkv_proj_smem_bf,
+                        {inst.layer_idx, static_cast<int>(g.pos_id), head_idx, dim_idx});
+                } else {
+                    int base_index = (block_idx - V_BLK_START) * Globals::matvec_block_size;
+                    int head_idx = base_index / Globals::head_dim;
+                    int dim_idx = (base_index % Globals::head_dim) / Globals::matvec_block_size;
+                    kittens::tma::store_async<cache_policy::EVICT_LAST>(
+                        g.v_cache, qkv_proj_smem_bf,
+                        {inst.layer_idx, static_cast<int>(g.pos_id), head_idx, dim_idx});
+                }
+                kittens::tma::store_async_wait();
+                asm volatile("fence.proxy.async.global;" ::: "memory");
+                atomicAdd(&g.Bar[{inst.layer_idx, BARRIER_ROW(opcode),
+                                  block_idx / 8}],
+                          1);
+            }
+            kittens::warp::sync();
+        }
+    };
+
+    using pipeline =
+        rms_matvec_pipeline<Config, Globals, parsed_instruction,
+                            pipeline_specifics, &Globals::hidden_states,
+                            &Globals::attn_norm_weights>;
+
+    __device__ static inline kittens::semaphore &rope_arrived(megakernel::state<Config> &s) {
+        return s.semaphores()[pipeline::SEM_COUNT];
+    }
+    __device__ static inline kittens::semaphore &bias_arrived(megakernel::state<Config> &s) {
+        return s.semaphores()[pipeline::SEM_COUNT + 1];
+    }
+
+    struct controller {
+        static __device__ int
+        release_lid(const Globals &g,
+                    typename Config::instruction_t &instruction, int &query) {
+            return pipeline::release_lid(g, instruction, query);
+        }
+        static __device__ int init_semaphores(const Globals &g,
+                                              megakernel::state<Config> &s) {
+            pipeline::init_semaphores(s);
+            init_semaphore(rope_arrived(s), 1);
+            init_semaphore(bias_arrived(s), 1);
+            return pipeline::SEM_COUNT + 2;
+        }
+    };
+    struct loader {
+        static __device__ void run(const Globals &g, megakernel::state<Config> &s) {
+            parsed_instruction inst{s};
+            if (kittens::laneid() == 0) {
+                auto &rope_cos = get_rope_cos(s);
+                auto &rope_sin = get_rope_sin(s);
+                auto &rope_sem = rope_arrived(s);
+                kittens::tma::expect(rope_sem, rope_cos, rope_sin);
+                kittens::tma::load_async<cache_policy::EVICT_LAST>(
+                    rope_cos, g.rope_cos, {0, 0, static_cast<int>(g.pos_id), 0}, rope_sem);
+                kittens::tma::load_async<cache_policy::EVICT_LAST>(
+                    rope_sin, g.rope_sin, {0, 0, static_cast<int>(g.pos_id), 0}, rope_sem);
+
+                auto &qkv_bias_first = *reinterpret_cast<kittens::sv_bf<16>*>(get_qkv_bias_first_ptr(s));
+                auto &qkv_bias_second = *reinterpret_cast<kittens::sv_bf<16>*>(get_qkv_bias_second_ptr(s));
+                auto &bias_sem = bias_arrived(s);
+                // TK vector TMA maps (d, r, c) to (b, d, r, c*16); the
+                // (layer, block_idx, 0) coordinate selects this layer and row.
+                kittens::tma::expect(bias_sem, qkv_bias_first, qkv_bias_second);
+                kittens::tma::load_async<cache_policy::EVICT_LAST>(
+                    qkv_bias_first, g.qkv_bias, {inst.layer_idx, inst.start_block_idx, 0}, bias_sem);
+                int second_blk = (inst.start_block_idx + 1 < QKV_TOTAL_BLKS) ? inst.start_block_idx + 1 : QKV_TOTAL_BLKS - 1;
+                kittens::tma::load_async<cache_policy::EVICT_LAST>(
+                    qkv_bias_second, g.qkv_bias, {inst.layer_idx, second_blk, 0}, bias_sem);
+            }
+            pipeline::loader_loop(s, g, inst.layer_idx);
+        }
+    };
+    struct launcher {
+        static __device__ void run(const Globals &g, megakernel::state<Config> &s) {
+            pipeline::launcher_loop(s, g);
+        }
+    };
+    struct consumer {
+        static __device__ void run(const Globals &g, megakernel::state<Config> &s) {
+            pipeline::consumer_loop(s, g);
+        }
+    };
+    struct storer {
+        static __device__ void run(const Globals &g, megakernel::state<Config> &s) {
+            pipeline::storer_loop(s, g);
+        }
+    };
+};
